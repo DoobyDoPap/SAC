@@ -104,8 +104,33 @@ void calculate_error()
         error = pos;
     }
 }
-void calculate_nodes(){
+int i=0;
+int node=0;
+int test_run[]={};
+test_run[i]={1};
 
+void calculate_nodes(){
+    bool node_flag;
+    if (node_flag) {
+        if ((sensor_now[0] && !sensor_now[1] && !sensor_now[2] && !sensor_now[3] && sensor_now[4])&&(!sensor_prev[1] && !sensor_prev[2] && !sensor_prev[3] && (!sensor_prev[4] || !sensor_prev[0] ) )) {
+            // test_run[i+1]={i};
+            node_flag=false;
+            node+=1;
+            i+=1;
+        }
+    }
+}
+int final_run[]={};
+void simplify_path(test_run){
+    for (a=0;a<=len;a++){
+        temp=test_run[a];
+        for (a<=len;a++){
+            if (temp % test_run[a] >= 2){
+                break;
+            }
+            final_run[a]=test_run[a];
+        }
+    }
 }
 
 void line_follow_task(void* arg)
@@ -140,20 +165,48 @@ void line_follow_task(void* arg)
 
         if (!sensor_now[0] && !sensor_now[1]&& !sensor_now[2] && !sensor_now[3] ){
             is_left = true;
+            test_run[i+1]=(test_run[i] - 1) % 4;
+            if ( test_run[i+1]==0) { 
+                test_run[i+!]={4};
+            }
+            i+=1;
+        }
+        else if (sensor_now[0] && !sensor_now[1] && !sensor_now[2] && !sensor_now[3] && sensor_now[4]){
+            is_straight = true;
+            test_run[i+1]=test_run[i];
+            i+=1;
         }
         else if (sensor_now[0] && sensor_now[1]&& sensor_now[2] && sensor_now[3] && sensor_now[4] && sensor_prev[0] && !sensor_prev[1]&& !sensor_prev[2] && !sensor_prev[3] && !sensor_prev[4]){
             is_right = true;
+            test_run[i+1]=(test_run[i] + 1) % 4;
+            if (test_run[i+1]==0) {
+                test_run[i+1]={4};
+            }
+            i+=1;
         }
-        // else if (!sensor_now[1] && !sensor_now[2]&& !sensor_now[3] && !sensor_now[4]){
-        //     is_right = true;
-        // }
         else if (sensor_now[0] && sensor_now[1]&& sensor_now[2] && sensor_now[3] && sensor_now[4]){
             is_end = true;
+            test_run[i+1] =( test_run[i] - 2) % 4;
+            if (test_run[i+1]==0) { 
+                test_run[i+1]=4;
+            }
+            if (test_run[i+!]==-1) { 
+                test_run[i+!]=3;
+            }
+            i+=1;
         }
-        else if (!sensor_now[0] && sensor_now[2] && !sensor_now[4]){
+        else if (!sensor_now[0] && sensor_now[2] && !sensor_now[4] && sensor[1] && sensor[3]){
             is_inverted = true;
         }
-
+        if (is_straight){
+            left_duty_cycle = optimum_duty_cycle ;
+            right_duty_cycle = optimum_duty_cycle ;
+            set_motor_speed(MOTOR_A_0, MOTOR_FORWARD, left_duty_cycle);
+            set_motor_speed(MOTOR_A_1, MOTOR_FORWARD, right_duty_cycle);
+            // vTaskDelay(500 / portTICK_PERIOD_MS);
+            is_straight = false;
+            
+        }
         if (is_left){
             left_duty_cycle = optimum_duty_cycle + 4 ;
             right_duty_cycle = optimum_duty_cycle + 4 ;
@@ -161,6 +214,7 @@ void line_follow_task(void* arg)
             set_motor_speed(MOTOR_A_1, MOTOR_FORWARD, right_duty_cycle);
             // vTaskDelay(500 / portTICK_PERIOD_MS);
             is_left = false;
+            
         }
         else if (is_right){
             left_duty_cycle = optimum_duty_cycle + 4;
@@ -169,6 +223,7 @@ void line_follow_task(void* arg)
             set_motor_speed(MOTOR_A_1, MOTOR_BACKWARD, right_duty_cycle);
             // vTaskDelay(500 / portTICK_PERIOD_MS);
             is_right = false;
+            
         }
         else if (is_end){
             left_duty_cycle = higher_duty_cycle ;
@@ -177,6 +232,7 @@ void line_follow_task(void* arg)
             set_motor_speed(MOTOR_A_1, MOTOR_BACKWARD, right_duty_cycle);
             // vTaskDelay(500 / portTICK_PERIOD_MS);
             is_end = false;
+
         }
         else if (is_inverted){
             left_duty_cycle = optimum_duty_cycle ;
