@@ -1,6 +1,3 @@
-
-
-
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -26,7 +23,7 @@ int optimum_duty_cycle = 56;
 int lower_duty_cycle = 43;
 int higher_duty_cycle = 69;
 float left_duty_cycle = 0, right_duty_cycle = 0;
-bool is_left = 0, is_right = 0, is_end = 0, is_inverted = 0,is_straight=0;
+bool is_left = 0, is_right = 0, is_end = 0, is_inverted = 0, is_stop = 0, is_slow = 0, is_straight = 0;
 
 /*
  * Line Following PID Variables
@@ -107,34 +104,9 @@ void calculate_error()
         error = pos;
     }
 }
-// int i=0;
-// int node=0;
-// int test_run[]={};
-// test_run[i]={1};
-
 void calculate_nodes(){
-    // bool node_flag;
-    // if (node_flag) {
-    //     if ((sensor_now[0] && !sensor_now[1] && !sensor_now[2] && !sensor_now[3] && sensor_now[4])&&(!sensor_prev[1] && !sensor_prev[2] && !sensor_prev[3] && (!sensor_prev[4] || !sensor_prev[0] ) )) {
-    //         // test_run[i+1]={i};
-    //         node_flag=false;
-    //         node+=1;
-    //         i+=1;
-    //     }
-    // }
+
 }
-// int final_run[]={};
-// void simplify_path(test_run){
-//     for (a=0;a<=len;a++){
-//         temp=test_run[a];
-//         for (a<=len;a++){
-//             if (temp % test_run[a] >= 2){
-//                 break;
-//             }
-//             final_run[a]=test_run[a];
-//         }
-//     }
-// }
 
 void line_follow_task(void* arg)
 {
@@ -166,14 +138,10 @@ int counter = 0;
             sensor_now[i] = (line_sensor_readings.adc_reading[i] > BLACK_BOUNDARY ) ? 0 : 1; 
         }
 
-        // if (!sensor_now[0] && !sensor_now[1]&& !sensor_now[2] && !sensor_now[3] ){
-        //     is_left = true;
-        //     // test_run[i+1]=(test_run[i] - 1) % 4;
-        //     // if ( test_run[i+1]==0) { 
-        //     //     test_run[i+!]={4};
-        //     // }
-        //     // i+=1;
+        // if(!(sensor_now[0] || sensor_now[4]) && !sensor_now[1] && !sensor_now[2] && !sensor_now[3]){
+        //     is_slow = true;
         // }
+
         if (sensor_now[0] && sensor_now[1]&& sensor_now[2] && sensor_now[3] && sensor_now[4] && !sensor_prev[0] && !sensor_prev[1]&& !sensor_prev[2] && !sensor_prev[3] && sensor_prev[4]){
             is_left = true; //only left
         }
@@ -184,33 +152,23 @@ int counter = 0;
 
         else if (sensor_now[0] && !sensor_now[1]&& !sensor_now[2] && !sensor_now[3] && sensor_now[4] && !sensor_prev[0] && !sensor_prev[1]&& !sensor_prev[2] && !sensor_prev[3] && !sensor_prev[4]){
             is_left = true; //junction 
-            // counter=0; 
+            counter=0; 
         }
-        else if (sensor_now[0] && !sensor_now[1] && !sensor_now[2] && !sensor_now[3] && sensor_now[4]){
-            is_straight = true;
-            // test_run[i+1]=test_run[i];
-            // i+=1;
-        }
+
+        // else if (sensor_now[0] && sensor_now[1]&& sensor_now[2] && sensor_now[3] && sensor_now[4] && sensor_prev[0] && !sensor_prev[1]&& !sensor_prev[2] && !sensor_prev[3] && !sensor_prev[4]){
+        //     is_straight = true; //straight right
+        // }
+
         else if (sensor_now[0] && sensor_now[1]&& sensor_now[2] && sensor_now[3] && sensor_now[4] && sensor_prev[0] && !sensor_prev[1]&& !sensor_prev[2] && !sensor_prev[3] && !sensor_prev[4]){
-            is_right = true;
-            // test_run[i+1]=(test_run[i] + 1) % 4;
-            // if (test_run[i+1]==0) {
-            //     test_run[i+1]={4};
-            // }
-            // i+=1;
+            is_right = true; //only right
         }
-        else if (sensor_now[0] && sensor_now[1]&& sensor_now[2] && sensor_now[3] && sensor_now[4]){
+        // else if (!sensor_now[1] && !sensor_now[2]&& !sensor_now[3] && !sensor_now[4]){
+        //     is_right = true;
+        // }
+        else if (sensor_now[0] && sensor_now[1]&& sensor_now[2] && sensor_now[3] && sensor_now[4] && sensor_prev[0] && !sensor_prev[1]&& !sensor_prev[2] && !sensor_prev[3] && sensor_prev[4]){
             is_end = true;
-            // test_run[i+1] =( test_run[i] - 2) % 4;
-            // if (test_run[i+1]==0) { 
-            //     test_run[i+1]=4;
-            // }
-            // if (test_run[i+!]==-1) { 
-            //     test_run[i+!]=3;
-            // }
-            // i+=1;
         }
-        else if (!sensor_now[0] && sensor_now[2] && !sensor_now[4] && sensor_now[1] && sensor_now[3]){
+        else if (!sensor_now[0] && sensor_now[2] && !sensor_now[4]){
             is_inverted = true;
         }
         // else if (!sensor_now[0] && !sensor_now[1]&& !sensor_now[2] && !sensor_now[3] && !sensor_now[4]){
@@ -220,17 +178,7 @@ int counter = 0;
         //         counter = 0;
         //     }
         // }
-        if (is_straight){
-            left_duty_cycle = optimum_duty_cycle ;
-            right_duty_cycle = optimum_duty_cycle ;
-            set_motor_speed(MOTOR_A_0, MOTOR_FORWARD, left_duty_cycle);
-            set_motor_speed(MOTOR_A_1, MOTOR_FORWARD, right_duty_cycle);
-            // vTaskDelay(500 / portTICK_PERIOD_MS);
-            is_straight = false;
-            is_left = false;
-            is_right = false;
-            
-        }
+        
         if (is_left){
             left_duty_cycle = optimum_duty_cycle + 4 ;
             right_duty_cycle = optimum_duty_cycle + 4 ;
@@ -238,25 +186,27 @@ int counter = 0;
             set_motor_speed(MOTOR_A_1, MOTOR_FORWARD, right_duty_cycle);
             // vTaskDelay(500 / portTICK_PERIOD_MS);
             // is_left = false;
-            
         }
         else if (is_right){
             left_duty_cycle = optimum_duty_cycle + 4;
             right_duty_cycle = optimum_duty_cycle + 4;
             set_motor_speed(MOTOR_A_0, MOTOR_FORWARD, left_duty_cycle);
             set_motor_speed(MOTOR_A_1, MOTOR_BACKWARD, right_duty_cycle);
-            // vTaskDelay(500 / portTICK_PERIOD_MS);
-            // is_right = false;
-            
+        //     // vTaskDelay(500 / portTICK_PERIOD_MS);
+        //     is_right = false;
         }
-        else if (is_end){
+        // else if ( is_straight) {
+        //     left_duty_cycle = optimum_duty_cycle;
+        //     right_duty_cycle = optimum_duty_cycle;
+        //     set_motor_speed()
+        // }
+            else if (is_end){
             left_duty_cycle = higher_duty_cycle ;
             right_duty_cycle = higher_duty_cycle ;
             set_motor_speed(MOTOR_A_0, MOTOR_FORWARD, left_duty_cycle);
             set_motor_speed(MOTOR_A_1, MOTOR_BACKWARD, right_duty_cycle);
             // vTaskDelay(500 / portTICK_PERIOD_MS);
             is_end = false;
-
         }
         else if (is_inverted){
             left_duty_cycle = optimum_duty_cycle ;
@@ -265,6 +215,22 @@ int counter = 0;
             set_motor_speed(MOTOR_A_1, MOTOR_FORWARD, right_duty_cycle);
             vTaskDelay(500 / portTICK_PERIOD_MS);
             is_inverted = false;
+        }
+        else if (is_stop){
+            left_duty_cycle = 0 ;
+            right_duty_cycle = 0 ;
+            set_motor_speed(MOTOR_A_0, MOTOR_FORWARD, left_duty_cycle);
+            set_motor_speed(MOTOR_A_1, MOTOR_FORWARD, right_duty_cycle);
+            vTaskDelay(500 / portTICK_PERIOD_MS);
+            is_stop = false;
+        }
+        else if (is_slow){
+            left_duty_cycle = optimum_duty_cycle - 2;
+            right_duty_cycle = optimum_duty_cycle - 2;        
+            set_motor_speed(MOTOR_A_0, MOTOR_FORWARD, left_duty_cycle);
+            set_motor_speed(MOTOR_A_1, MOTOR_FORWARD, right_duty_cycle);
+            vTaskDelay(500 / portTICK_PERIOD_MS);
+            is_slow = false;
         }
         else {
             calculate_error();
@@ -282,7 +248,7 @@ int counter = 0;
         }
 
 
-       // ESP_LOGI("debug","left_duty_cycle:  %f    ::  right_duty_cycle :  %f  :: error :  %f  correction  :  %f  \n",left_duty_cycle, right_duty_cycle, error, correction);
+        // ESP_LOGI("debug", "counter  %d   ::  right_duty_cycle :  %f  :: error :  %f  correction  :  %f  \n", counter , right_duty_cycle, error, correction);
     //    ESP_LOGI("debug", "KP: %f ::  KI: %f  :: KD: %f", read_pid_const().kp, read_pid_const().ki, read_pid_const().kd);
 #ifdef CONFIG_ENABLE_OLED
         // Diplaying kp, ki, kd values on OLED 
@@ -303,4 +269,4 @@ void app_main()
 {
     xTaskCreate(&line_follow_task, "line_follow_task", 4096, NULL, 1, NULL);
     start_tuning_http_server();
-}
+} 
