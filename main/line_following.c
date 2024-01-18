@@ -9,31 +9,37 @@
 #define WHITE_MARGIN 0
 #define bound_LSA_LOW 0
 #define bound_LSA_HIGH 1000
-#define BLACK_BOUNDARY  700    // Boundary value to distinguish between black and white readings
+#define BLACK_BOUNDARY  850    // Boundary value to distinguish between black and white readings
 
+#define left 0
+#define right 1
+#define straight 2
+#define deadend 3
 /*
  * weights given to respective line sensor
  */
 const int weights[5] = {-5, -3, 1, 3, 5};
-
+const int weights_inverted[5] = {-5, -3, 1, 3, 5 }; 
 /*
  * Motor value boundts
  */
-int optimum_duty_cycle = 60;
-int lower_duty_cycle = 50;
+int optimum_duty_cycle = 57;
+int lower_duty_cycle = 44;
 int higher_duty_cycle = 70;
 float left_duty_cycle = 0, right_duty_cycle = 0;
-
+bool is_left = 0, is_right = 0, is_end = 0, is_stop = 0;
+int idx = 0, dry_run_flag = 0;
+int counter = 0; 
+bool switch_left = 0, switch_end = 0, switch_straight = 0;
 /*
  * Line Following PID Variables
  */
 float error=0, prev_error=0, difference, cumulative_error, correction;
-
+int nodes_array[100];
 /*
  * Union containing line sensor readings
  */
 line_sensor_array line_sensor_readings;
-
 
 void lsa_to_bar()
 {   
@@ -57,32 +63,55 @@ void calculate_correction()
 
     correction = read_pid_const().kp*error + read_pid_const().ki*cumulative_error + read_pid_const().kd*difference;
     prev_error = error;
-} 
-
+}
 
 void calculate_error()
 {
     int all_black_flag = 1; // assuming initially all black condition
+    // int all_white_flag = 0;
     float weighted_sum = 0, sum = 0; 
     float pos = 0; int k = 0;
 
-    for(int i = 0; i < 5; i++)
-    {
-        if(line_sensor_readings.adc_reading[i] > BLACK_BOUNDARY)
+    if (line_sensor_readings.adc_reading[0]  > BLACK_BOUNDARY && line_sensor_readings.adc_reading[4]  > BLACK_BOUNDARY && (line_sensor_readings.adc_reading[2]  < BLACK_BOUNDARY || line_sensor_readings.adc_reading[1]  < BLACK_BOUNDARY || line_sensor_readings.adc_reading[3]  < BLACK_BOUNDARY) ) {
+        for (int i = 0; i < 5; i++)
         {
-            all_black_flag = 0;
+            // if (line_sensor_readings.adc_reading[i] > BLACK_BOUNDARY)
+            // {
+            //     all_white_flag = 1;
+            // }
+            if (line_sensor_readings.adc_reading[i] < 850)
+            {
+                k = 1;
+            }
+            if (line_sensor_readings.adc_reading[i] > 850)
+            {
+                k = 0;
+            }
+            weighted_sum += (float)(weights_inverted[i]) * k;
+            sum = sum + k;
         }
-        if(line_sensor_readings.adc_reading[i] > 700)
-        {
-            k = 1;
-        }
-        if(line_sensor_readings.adc_reading[i] < 700)
-        {
-            k = 0;
-        }
-        weighted_sum += (float)(weights[i]) * k;
-        sum = sum + k;
     }
+    else {
+        for (int i = 0; i < 5; i++)
+        {
+            if (line_sensor_readings.adc_reading[i] > BLACK_BOUNDARY)
+            {
+                all_black_flag = 0;
+            }
+            if (line_sensor_readings.adc_reading[i] > 850)
+            {
+                k = 1;
+            }
+            if (line_sensor_readings.adc_reading[i] < 850)
+            {
+                k = 0;
+            }
+            weighted_sum += (float)(weights[i]) * k;
+            sum = sum + k;
+        }
+    }
+        
+        
 
     if(sum != 0) // sum can never be 0 but just for safety purposes
     {
@@ -104,14 +133,13 @@ void calculate_error()
     {
         error = pos;
     }
-} 
-
+}
 
 void line_follow_task(void* arg)
 {
     ESP_ERROR_CHECK(enable_motor_driver(a, NORMAL_MODE));
     ESP_ERROR_CHECK(enable_line_sensor());
-    ESP_ERROR_CHECK(enable_bar_graph());
+    //ESP_ERROR_CHECK(enable_bar_graph());
 #ifdef CONFIG_ENABLE_OLED
     // Initialising the OLED
     ESP_ERROR_CHECK(init_oled());
@@ -126,74 +154,145 @@ void line_follow_task(void* arg)
     {
         line_sensor_readings = read_line_sensor();
         bool sensor_now[5] = {0,0,0,0,0};
-        bool sensor_previous[5] = {0,0,0,0,0};
-        for (int i = 0; i < 5; i ++){
-            sensor_now[i] = (line_sensor_readings.adc_reading[i] > BLACK_BOUNDARY) ? 1 : 0;
-        }
-
-        //Straight
-        if (sensor_now[0] && !sensor_now[1] && !sensor_now[2] && !sensor_now[3] && !sensor_now[4] && sensor_previous[0] && !sensor_previous[1] && !sensor_previous[2] && !sensor_previous[3] && !sensor_previous[4]){
+        bool sensor_prev[5] = {0,0,0,0,0};
         for(int i = 0; i < 5; i++)
         {
             line_sensor_readings.adc_reading[i] = bound(line_sensor_readings.adc_reading[i], WHITE_MARGIN, BLACK_MARGIN);
             line_sensor_readings.adc_reading[i] = map(line_sensor_readings.adc_reading[i], WHITE_MARGIN, BLACK_MARGIN, bound_LSA_LOW, bound_LSA_HIGH);
-            line_sensor_readings.adc_reading[i] = 1000 - (line_sensor_readings.adc_reading[i]); 
+            line_sensor_readings.adc_reading[i] = 1000 - (line_sensor_readings.adc_reading[i]);
         }
-        
-        calculate_error();
-        calculate_correction();
-        lsa_to_bar();
-
-        set_motor_speed(MOTOR_A_0, MOTOR_FORWARD, optimum_duty_cycle);
-        set_motor_speed(MOTOR_A_1, MOTOR_FORWARD, optimum_duty_cycle);   
+        for (int i = 0; i < 5; i++ ){
+            sensor_now[i] = (line_sensor_readings.adc_reading[i] > BLACK_BOUNDARY ) ? 0 : 1; 
         }
 
-        //Right
-        if (sensor_now[0] && sensor_now[1] && sensor_now[2] && sensor_now[3] && sensor_now[4] && sensor_previous[0] && !sensor_previous[1] && !sensor_previous[2] && !sensor_previous[3] && !sensor_previous[4]){
-        for(int i = 0; i < 5; i++)
-        {
-            line_sensor_readings.adc_reading[i] = bound(line_sensor_readings.adc_reading[i], WHITE_MARGIN, BLACK_MARGIN);
-            line_sensor_readings.adc_reading[i] = map(line_sensor_readings.adc_reading[i], WHITE_MARGIN, BLACK_MARGIN, bound_LSA_LOW, bound_LSA_HIGH);
-            line_sensor_readings.adc_reading[i] = 1000 - (line_sensor_readings.adc_reading[i]); 
+        if (!sensor_now[0] && !sensor_now[1]&& !sensor_now[2] && !sensor_now[3] ){
+                is_left = true;
+                if (counter  >= 50){ 
+                    is_stop = true;
+                    is_left = false;
+                }
+            // else{
+            //     if ((nodes_array[idx + 1] == deadend) || (nodes_array[idx + 2] == right && nodes_array[idx + 1] == right) ){ 
+            //         is_left = 0;
+            //     }else {
+            //         is_left = 1;
+            //     }
+            // }
+            // if(!switch_left){
+            //     if(!dry_run_flag) nodes_array[idx] = left;
+            //     idx += 1;
+            //     switch_left = 1;
+            
         }
-        
-        calculate_error();
-        calculate_correction();
-        lsa_to_bar();
+        else if (sensor_now[0] && sensor_now[1]&& sensor_now[2] && sensor_now[3] && sensor_now[4] && sensor_prev[0] && !sensor_prev[1]&& !sensor_prev[2] && !sensor_prev[3] && !sensor_prev[4]){
+            is_right = true;
+        }
+        // else if (sensor_now[0] && !sensor_now[1]&& !sensor_now[2] && !sensor_now[3] && sensor_now[4] && sensor_prev[0] && !sensor_prev[1]&& !sensor_prev[2] && !sensor_prev[3] && !sensor_prev[4] ){
+        //     if (!switch_straight) {
+        //         if(dry_run_flag){
+        //             if ((nodes_array[idx + 1] == deadend) ){ 
+        //                 is_right = 1;
+        //             }else {
+        //                 is_right = 0;
+        //             }
+        //             switch_straight = 1;
+        //             idx += 1;
+        //         }
+        //         else {
+        //             nodes_array[idx] = straight;
+        //             idx += 1;
+        //             switch_straight = 1;
+        //             is_right = 0;
+        //         }
+        //     }
+        // }
+        else if (sensor_now[0] && sensor_now[1]&& sensor_now[2] && sensor_now[3] && sensor_now[4]){
+            is_end = true;
+            // nodes_array[idx] = deadend;
+            // idx += 1;
+        }
+        // else if (!sensor_now[0] && sensor_now[2] && !sensor_now[4]){
+        //     is_inverted = true;
+        // }
+        if(!sensor_now[0] && !sensor_now[1] && !sensor_now[2] && !sensor_now[3] && !sensor_now[4]){
+           counter += 1;
+        }
+        // if (sensor_now[0] && !sensor_now[1] && !sensor_now[2] && !sensor_now[3] && sensor_now[4]){
+        //     if(counter != 0) counter = 0;
+        //     // is_left = false;
+        //     // is_right = false;
+        //     // is_end = false;
+        //     switch_left = 0;
+        //     switch_end = 0;
+        //     switch_straight = 0;r
+        // }
 
-        left_duty_cycle = bound((optimum_duty_cycle + correction), lower_duty_cycle, higher_duty_cycle);
-        right_duty_cycle = bound((optimum_duty_cycle - correction), lower_duty_cycle, higher_duty_cycle);
+        if (is_left){
+            left_duty_cycle = optimum_duty_cycle +  5;
+            right_duty_cycle = optimum_duty_cycle + 5;
+            set_motor_speed(MOTOR_A_0, MOTOR_BACKWARD, left_duty_cycle);
+            set_motor_speed(MOTOR_A_1, MOTOR_FORWARD, right_duty_cycle);
+            // vTaskDelay(500 / portTICK_PERIOD_MS);
+            is_left = false;
+        }
+        else if (is_right){
+            left_duty_cycle = optimum_duty_cycle + 4;
+            right_duty_cycle = optimum_duty_cycle + 4   ;
+            set_motor_speed(MOTOR_A_0, MOTOR_FORWARD, left_duty_cycle);
+            set_motor_speed(MOTOR_A_1, MOTOR_BACKWARD, right_duty_cycle);
+            // nodes_array[idx] = right;
+            // idx += 1;
+            is_right = false;
+            // vTaskDelay(500 / portTICK_PERIOD_MS);
+        }
+        else if (is_end){
+            left_duty_cycle = higher_duty_cycle ;
+            right_duty_cycle = higher_duty_cycle ;
+            set_motor_speed(MOTOR_A_0, MOTOR_FORWARD, left_duty_cycle);
+            set_motor_speed(MOTOR_A_1, MOTOR_BACKWARD, right_duty_cycle);
+            nodes_array[idx] = deadend;
+            idx += 1;
+            is_end = false;
+            // vTaskDelay(500 / portTICK_PERIOD_MS);
+        }
+        else if (is_stop){
+            left_duty_cycle = 0;
+            right_duty_cycle  = 0;
+            dry_run_flag = 1;
+            idx = 0;
+            set_motor_speed(MOTOR_A_0, MOTOR_FORWARD, left_duty_cycle);
+            set_motor_speed(MOTOR_A_1, MOTOR_FORWARD, right_duty_cycle);
+            for (int i = 0; i < 5; i++)
+            {
+                ESP_ERROR_CHECK(set_bar_graph(0xFF));
+                //0xFF = 1111 1111(all leds are on)
+                // setting values of all 8 leds to 1
+                vTaskDelay(1000 / portTICK_RATE_MS);
+                //delay of 1s
+                ESP_ERROR_CHECK(set_bar_graph(0x00));
+                //0x00 = 0000 0000(all leds are off)
+                // setting values of all 8 leds to 0
+                vTaskDelay(1000 / portTICK_RATE_MS);
+                //delay of 1s
+            }
+        }
+        else {
+            calculate_error();
+            calculate_correction();
+            counter = 0;
+            left_duty_cycle = bound((optimum_duty_cycle + correction), lower_duty_cycle, higher_duty_cycle);
+            right_duty_cycle = bound((optimum_duty_cycle - correction), lower_duty_cycle, higher_duty_cycle);
 
-        set_motor_speed(MOTOR_A_0, MOTOR_FORWARD, left_duty_cycle);
-        set_motor_speed(MOTOR_A_1, MOTOR_FORWARD, right_duty_cycle); 
+            set_motor_speed(MOTOR_A_0, MOTOR_FORWARD, left_duty_cycle);
+            set_motor_speed(MOTOR_A_1, MOTOR_FORWARD, right_duty_cycle);
+            // is_inverted = false;
+        }
+        for (int i = 0; i < 5; i++ ){
+            sensor_prev[i] = sensor_now[i]; 
         }
 
-        //Left
-        if (line_sensor_readings.adc_reading[0] < BLACK_BOUNDARY && line_sensor_readings.adc_reading[1] < BLACK_BOUNDARY && line_sensor_readings.adc_reading[2] < BLACK_BOUNDARY && line_sensor_readings.adc_reading[3] < BLACK_BOUNDARY && line_sensor_readings.adc_reading[4] > BLACK_BOUNDARY){
-        for(int i = 0; i < 5; i++)
-        {
-            line_sensor_readings.adc_reading[i] = bound(line_sensor_readings.adc_reading[i], WHITE_MARGIN, BLACK_MARGIN);
-            line_sensor_readings.adc_reading[i] = map(line_sensor_readings.adc_reading[i], WHITE_MARGIN, BLACK_MARGIN, bound_LSA_LOW, bound_LSA_HIGH);
-            line_sensor_readings.adc_reading[i] = 1000 - (line_sensor_readings.adc_reading[i]); 
-        }
-        
-        calculate_error();
-        calculate_correction();
-        lsa_to_bar();
-
-        left_duty_cycle = bound((optimum_duty_cycle + correction), lower_duty_cycle, higher_duty_cycle);
-        right_duty_cycle = bound((optimum_duty_cycle - correction), lower_duty_cycle, higher_duty_cycle);
-
-        set_motor_speed(MOTOR_A_0, MOTOR_FORWARD, right_duty_cycle);
-        set_motor_speed(MOTOR_A_1, MOTOR_FORWARD, left_duty_cycle); 
-        } 
-        
-        for (int i = 0; i < 5; i++){
-            sensor_previous[i] = sensor_now[i];
-        }
-
-        //ESP_LOGI("debug","left_duty_cycle:  %f    ::  right_duty_cycle :  %f  :: error :  %f  correction  :  %f  \n",left_duty_cycle, right_duty_cycle, error, correction);
-        ESP_LOGI("debug", "KP: %f ::  KI: %f  :: KD: %f", read_pid_const().kp, read_pid_const().ki, read_pid_const().kd);
+    //ESP_LOGI("debug", "node:  %f    ::  right_duty_cycle :  %f  :: error :  %f  correction  :  %f  \n",(float)set, right_duty_cycle, error, correction);
+    //  ESP_LOGI("debug", "KP: %f ::  KI: %f  :: KD: %f", read_pid_const().kp, read_pid_const().ki, read_pid_const().kd);
 #ifdef CONFIG_ENABLE_OLED
         // Diplaying kp, ki, kd values on OLED 
         if (read_pid_const().val_changed)
